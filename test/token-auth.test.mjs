@@ -97,7 +97,12 @@ test('the app starts its own browser sign-in when its IMS instance initializes a
   globalThis.document = {
     querySelector: element,
     createElement: () => ({}),
-    head: { append: () => globalThis.window.adobeid.onReady() },
+    head: {
+      append: () => {
+        globalThis.window.adobeid.onError({ name: 'check-token-failed' });
+        globalThis.window.adobeid.onReady();
+      },
+    },
   };
   try {
     const appSource = app.replace("'./auth.js'", JSON.stringify(moduleUrl));
