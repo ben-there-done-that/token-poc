@@ -59,3 +59,9 @@ export function daContextSummary(message) {
     sdkTokenUsed: false,
   };
 }
+
+export function imsErrorCode(error) {
+  const code = error?.error || error?.code || error?.name;
+  return typeof code === 'string' && /^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$/.test(code)
+    ? code : 'IMS error';
+}

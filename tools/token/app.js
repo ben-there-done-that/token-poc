@@ -1,5 +1,6 @@
 import {
   CLIENT_ID, SCOPE, authorizeUrl, isOAuthMessage, tokenSummary, verifyDaRead, daContextSummary,
+  imsErrorCode,
 } from './auth.js';
 
 const evidence = {
@@ -23,7 +24,13 @@ function render(message) {
 
 function begin(method) {
   currentAttempt = { method, startedAt: new Date().toISOString(), status: 'pending' };
-  evidence.attempts.push(currentAttempt);
+  const attempt = currentAttempt;
+  evidence.attempts.push(attempt);
+  window.setTimeout(() => {
+    if (attempt.status !== 'pending') return;
+    attempt.status = 'no-callback';
+    render('IMS did not return a token to this app within 30 seconds. See sanitized evidence.');
+  }, 30000);
   render('Waiting for IMS. Any DA-supplied token is ignored.');
   return currentAttempt;
 }
@@ -107,7 +114,7 @@ document.querySelector('#imslib').addEventListener('click', () => {
     },
     onError: (error) => {
       attempt.status = 'error';
-      attempt.error = error?.name || 'IMS error';
+      attempt.error = imsErrorCode(error);
       render('Own IMS library could not mint a token.');
     },
   };
