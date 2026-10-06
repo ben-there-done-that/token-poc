@@ -13,7 +13,12 @@
       <h1>Independent IMS token</h1>
       <p>Non-Adobe DA app · <code>client_id=darkalley</code></p>
       <p>This app ignores DA's supplied token. It asks IMS directly, then tests its own token with a read-only request for this site's DA source. Token values and user profiles are never shown or included in the evidence download.</p>
+      <label for="client-id">PKCE client ID</label>
+      <input id="client-id" value="darkalley" autocomplete="off">
+      <label for="scope">PKCE scopes</label>
+      <input id="scope" value="ab.manage,AdobeID,gnav,openid,org.read,read_organizations,session,aem.frontend.all,additional_info.ownerOrg,additional_info.projectedProductContext,account_cluster.read" autocomplete="off">
       <div class="actions">
+        <button id="pkce" type="button">Mint via code + PKCE</button>
         <button id="imslib" type="button">Mint with own IMS library</button>
         <button id="oauth" type="button">Mint via browser OAuth</button>
         <button id="download" type="button">Download sanitized evidence</button>

@@ -1,6 +1,6 @@
 import {
   CLIENT_ID, SCOPE, authorizeUrl, isOAuthMessage, tokenSummary, verifyDaRead, daContextSummary,
-  imsErrorCode,
+  imsErrorCode, createPkce, codeAuthorizeUrl, exchangeCode,
 } from './auth.js';
 
 const evidence = {
@@ -16,6 +16,7 @@ let popup;
 let state;
 let imslibLoaded = false;
 let currentAttempt;
+let pkce;
 
 function render(message) {
   if (message) status.textContent = message;
@@ -23,6 +24,9 @@ function render(message) {
 }
 
 function begin(method) {
+  state = null;
+  popup = null;
+  pkce = null;
   currentAttempt = { method, startedAt: new Date().toISOString(), status: 'pending' };
   const attempt = currentAttempt;
   evidence.attempts.push(attempt);
@@ -51,15 +55,17 @@ async function verify(token, attempt) {
   render(attempt.daRead.ok ? 'Success: own IMS token accepted by DA (HTTP 200).' : 'Token obtained; DA read did not succeed. See sanitized evidence.');
 }
 
-window.addEventListener('message', (event) => {
+window.addEventListener('message', async (event) => {
   if (event.source === window.parent && event.origin === 'https://da.live' && event.data?.ready && event.ports.length) {
     Object.assign(evidence, daContextSummary(event.data));
     event.ports[0].postMessage({ action: 'setTitle', details: document.title });
     render('DA initialized this app. Its supplied token was ignored.');
   }
   if (!isOAuthMessage(event, window.location.origin, popup, state)) return;
-  sessionStorage.removeItem('token-poc-state');
   const attempt = currentAttempt;
+  if (attempt.status !== 'pending') return;
+  sessionStorage.removeItem('token-poc-state');
+  sessionStorage.removeItem('token-poc-flow');
   state = null;
   if (event.data.error) {
     attempt.status = 'error';
@@ -67,7 +73,22 @@ window.addEventListener('message', (event) => {
     render('IMS rejected this authorization request.');
     return;
   }
-  verify(event.data.token, attempt);
+  if (event.data.code && pkce) {
+    attempt.authorizationCodeReceived = true;
+    render('Authorization code received. Exchanging it using this app’s PKCE verifier.');
+    try {
+      const result = await exchangeCode(attempt.clientId, event.data.code, pkce.verifier);
+      pkce = null;
+      await verify(result.token, attempt);
+    } catch (error) {
+      pkce = null;
+      attempt.status = 'error';
+      attempt.error = error.name === 'TypeError' ? 'Token endpoint network/CORS failure' : error.message;
+      render('PKCE token exchange failed. See sanitized evidence.');
+    }
+  } else {
+    verify(event.data.token, attempt);
+  }
 });
 
 document.querySelector('#oauth').addEventListener('click', () => {
@@ -75,11 +96,32 @@ document.querySelector('#oauth').addEventListener('click', () => {
   const attempt = begin('direct-browser-oauth');
   state = crypto.randomUUID();
   sessionStorage.setItem('token-poc-state', state);
+  sessionStorage.setItem('token-poc-flow', 'token');
   popup = window.open(authorizeUrl(window.location.origin, state), 'token-poc-login', 'popup,width=650,height=760');
   if (!popup) {
     attempt.status = 'blocked';
     render('Popup blocked. Allow this app to open its login popup.');
   }
+});
+
+document.querySelector('#pkce').addEventListener('click', async () => {
+  if (currentAttempt?.status === 'pending') return;
+  const attempt = begin('authorization-code-pkce');
+  attempt.clientId = document.querySelector('#client-id').value.trim() || CLIENT_ID;
+  attempt.scope = document.querySelector('#scope').value.trim() || SCOPE;
+  attempt.authorizationCodeReceived = false;
+  state = crypto.randomUUID();
+  sessionStorage.setItem('token-poc-state', state);
+  sessionStorage.setItem('token-poc-flow', 'code');
+  popup = window.open('about:blank', 'token-poc-login', 'popup,width=650,height=760');
+  if (!popup) {
+    attempt.status = 'blocked';
+    render('Popup blocked. Allow this app to open its login popup.');
+    return;
+  }
+  pkce = await createPkce();
+  attempt.challengeMethod = 'S256';
+  popup.location.href = codeAuthorizeUrl(window.location.origin, state, pkce.challenge, attempt);
 });
 
 document.querySelector('#imslib').addEventListener('click', () => {

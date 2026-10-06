@@ -65,3 +65,55 @@ export function imsErrorCode(error) {
   return typeof code === 'string' && /^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$/.test(code)
     ? code : 'IMS error';
 }
+
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function pkceChallenge(verifier) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64url(new Uint8Array(digest));
+}
+
+export async function createPkce() {
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  return { verifier, challenge: await pkceChallenge(verifier) };
+}
+
+export function codeAuthorizeUrl(origin, state, challenge, {
+  clientId = CLIENT_ID, scope = SCOPE,
+} = {}) {
+  const url = new URL(authorizeUrl(origin, state));
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('scope', scope);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('response_mode', 'fragment');
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('code_challenge', challenge);
+  return url.href;
+}
+
+export function acceptCodeResult(parameters, expectedState) {
+  const params = new URLSearchParams(parameters.replace(/^[#?]/, ''));
+  if (!expectedState || params.get('state') !== expectedState) throw new Error('OAuth state mismatch');
+  if (params.has('error')) throw new Error(`IMS error: ${imsErrorCode({ error: params.get('error') })}`);
+  const code = params.get('code');
+  if (!code) throw new Error('IMS returned no authorization code');
+  return { code };
+}
+
+export async function exchangeCode(clientId, code, verifier, fetcher = fetch) {
+  const url = new URL('https://ims-na1.adobelogin.com/ims/token/v3');
+  url.searchParams.set('client_id', clientId);
+  const response = await fetcher(url.href, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: verifier }),
+    credentials: 'omit',
+    signal: AbortSignal.timeout(15000),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(`IMS token exchange HTTP ${response.status}: ${imsErrorCode(result)}`);
+  if (!result.access_token) throw new Error('IMS token exchange returned no access token');
+  return { token: result.access_token, expiresIn: Number(result.expires_in) || null };
+}
