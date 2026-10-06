@@ -112,7 +112,9 @@ export async function exchangeCode(clientId, code, verifier, fetcher = fetch) {
     credentials: 'omit',
     signal: AbortSignal.timeout(15000),
   });
-  const result = await response.json();
+  const result = await response.json().catch(() => {
+    throw new Error('IMS token exchange returned invalid JSON');
+  });
   if (!response.ok) throw new Error(`IMS token exchange HTTP ${response.status}: ${imsErrorCode(result)}`);
   if (!result.access_token) throw new Error('IMS token exchange returned no access token');
   return { token: result.access_token, expiresIn: Number(result.expires_in) || null };

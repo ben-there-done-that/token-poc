@@ -23,7 +23,7 @@ function render(message) {
   output.textContent = JSON.stringify(evidence, null, 2);
 }
 
-function begin(method) {
+function begin(method, callbackTimeout = 30000) {
   state = null;
   popup = null;
   pkce = null;
@@ -33,8 +33,8 @@ function begin(method) {
   window.setTimeout(() => {
     if (attempt.status !== 'pending') return;
     attempt.status = 'no-callback';
-    render('IMS did not return a token to this app within 30 seconds. See sanitized evidence.');
-  }, 30000);
+    render('IMS did not return a token before the callback deadline. See sanitized evidence.');
+  }, callbackTimeout);
   render('Waiting for IMS. Any DA-supplied token is ignored.');
   return currentAttempt;
 }
@@ -106,7 +106,7 @@ document.querySelector('#oauth').addEventListener('click', () => {
 
 document.querySelector('#pkce').addEventListener('click', async () => {
   if (currentAttempt?.status === 'pending') return;
-  const attempt = begin('authorization-code-pkce');
+  const attempt = begin('authorization-code-pkce', 300000);
   attempt.clientId = document.querySelector('#client-id').value.trim() || CLIENT_ID;
   attempt.scope = document.querySelector('#scope').value.trim() || SCOPE;
   attempt.authorizationCodeReceived = false;
