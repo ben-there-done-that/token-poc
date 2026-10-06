@@ -99,8 +99,10 @@ document.querySelector('#imslib').addEventListener('click', () => {
       const result = window.adobeIMS.getAccessToken();
       if (result?.token) verify(result.token, attempt);
       else {
-        attempt.status = 'anonymous';
-        render('Own IMS library initialized without a token. Use browser OAuth to sign in.');
+        attempt.status = 'pending';
+        delete attempt.error;
+        window.adobeIMS.signIn();
+        render('Own IMS instance opened browser sign-in. Any DA-supplied token is ignored.');
       }
     },
     onError: (error) => {
