@@ -73,3 +73,41 @@ test('DA initialization records presence only and cannot return the supplied tok
   assert.deepEqual(summary, { initialized: true, sdkTokenReceived: true, sdkTokenUsed: false });
   assert.ok(!JSON.stringify(summary).includes('synthetic-sdk-token'));
 });
+
+test('the app starts its own browser sign-in when its IMS instance initializes anonymously', async () => {
+  const app = await readFile(new URL('../tools/token/app.js', import.meta.url), 'utf8');
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+  const listeners = {};
+  const elements = new Map();
+  const element = (selector) => {
+    if (!elements.has(selector)) elements.set(selector, {
+      textContent: '',
+      addEventListener: (type, callback) => { listeners[`${selector}:${type}`] = callback; },
+    });
+    return elements.get(selector);
+  };
+  let signIns = 0;
+  const saved = { window: globalThis.window, document: globalThis.document };
+  globalThis.window = {
+    location: { origin: 'https://app.example' },
+    addEventListener() {},
+    adobeIMS: { getAccessToken: () => null, signIn: () => { signIns += 1; } },
+  };
+  globalThis.window.parent = globalThis.window;
+  globalThis.document = {
+    querySelector: element,
+    createElement: () => ({}),
+    head: { append: () => globalThis.window.adobeid.onReady() },
+  };
+  try {
+    const appSource = app.replace("'./auth.js'", JSON.stringify(moduleUrl));
+    await import(`data:text/javascript;base64,${Buffer.from(appSource).toString('base64')}`);
+    listeners['#imslib:click']();
+    assert.equal(signIns, 1, 'an anonymous independent IMS instance must open browser sign-in');
+    const evidence = JSON.parse(element('#evidence').textContent);
+    assert.equal(evidence.attempts[0].status, 'pending');
+    assert.equal(evidence.sdkTokenUsed, false);
+  } finally {
+    Object.assign(globalThis, saved);
+  }
+});
