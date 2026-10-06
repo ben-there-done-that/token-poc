@@ -1,0 +1,32 @@
+.token-poc {
+  max-width: 880px;
+  margin: 32px auto;
+  padding: 24px;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #17223b;
+}
+
+.token-poc .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.token-poc button {
+  padding: 10px 16px;
+  border: 1px solid #245adb;
+  border-radius: 6px;
+  background: #245adb;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+}
+
+.token-poc pre {
+  padding: 16px;
+  border-radius: 6px;
+  background: #f2f4f8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

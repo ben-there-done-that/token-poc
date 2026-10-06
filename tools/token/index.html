@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>Independent IMS Token PoC</title>
+    <link rel="stylesheet" href="./style.css">
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main class="token-poc">
+      <h1>Independent IMS token</h1>
+      <p>Non-Adobe DA app · <code>client_id=darkalley</code></p>
+      <p>This app ignores DA's supplied token. It asks IMS directly, then tests its own token with a read-only request for this site's DA source. Token values and user profiles are never shown or included in the evidence download.</p>
+      <div class="actions">
+        <button id="imslib" type="button">Mint with own IMS library</button>
+        <button id="oauth" type="button">Mint via browser OAuth</button>
+        <button id="download" type="button">Download sanitized evidence</button>
+      </div>
+      <p id="status" role="status"></p>
+      <pre id="evidence" aria-label="Sanitized test evidence"></pre>
+    </main>
+  </body>
+</html>
