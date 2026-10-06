@@ -82,17 +82,25 @@ test('the app starts its own browser sign-in when its IMS instance initializes a
   const element = (selector) => {
     if (!elements.has(selector)) elements.set(selector, {
       textContent: '',
+      value: '',
       addEventListener: (type, callback) => { listeners[`${selector}:${type}`] = callback; },
     });
     return elements.get(selector);
   };
   let signIns = 0;
   let timeout;
-  const saved = { window: globalThis.window, document: globalThis.document };
+  let timeoutMs;
+  const saved = {
+    window: globalThis.window,
+    document: globalThis.document,
+    sessionStorage: globalThis.sessionStorage,
+  };
+  globalThis.sessionStorage = { setItem() {}, removeItem() {} };
   globalThis.window = {
     location: { origin: 'https://app.example' },
     addEventListener() {},
-    setTimeout: (callback) => { timeout = callback; },
+    setTimeout: (callback, milliseconds) => { timeout = callback; timeoutMs = milliseconds; },
+    open: () => ({ location: {} }),
     adobeIMS: { getAccessToken: () => null, signIn: () => { signIns += 1; } },
   };
   globalThis.window.parent = globalThis.window;
@@ -117,6 +125,8 @@ test('the app starts its own browser sign-in when its IMS instance initializes a
     assert.equal(typeof timeout, 'function', 'browser authorization needs a bounded callback wait');
     timeout();
     assert.equal(JSON.parse(element('#evidence').textContent).attempts[0].status, 'no-callback');
+    await listeners['#pkce:click']();
+    assert.equal(timeoutMs, 300000, 'interactive PKCE must allow time for user consent');
   } finally {
     Object.assign(globalThis, saved);
   }
@@ -193,6 +203,19 @@ test('code-exchange failures never include codes, verifiers, or arbitrary IMS re
   await assert.rejects(auth.exchangeCode('client', 'synthetic-code', 'synthetic-verifier', fetcher), error => {
     assert.match(error.message, /400.*invalid_grant/);
     assert.ok(!/synthetic/.test(error.message));
+    return true;
+  });
+});
+
+test('invalid token-endpoint JSON is reported without exposing response fragments', async () => {
+  const fetcher = async () => ({
+    ok: false,
+    status: 502,
+    json: async () => { throw new SyntaxError('synthetic-sensitive-response'); },
+  });
+  await assert.rejects(auth.exchangeCode('client', 'synthetic-code', 'synthetic-verifier', fetcher), error => {
+    assert.match(error.message, /invalid JSON/);
+    assert.ok(!error.message.includes('synthetic'));
     return true;
   });
 });
