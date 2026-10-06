@@ -87,10 +87,12 @@ test('the app starts its own browser sign-in when its IMS instance initializes a
     return elements.get(selector);
   };
   let signIns = 0;
+  let timeout;
   const saved = { window: globalThis.window, document: globalThis.document };
   globalThis.window = {
     location: { origin: 'https://app.example' },
     addEventListener() {},
+    setTimeout: (callback) => { timeout = callback; },
     adobeIMS: { getAccessToken: () => null, signIn: () => { signIns += 1; } },
   };
   globalThis.window.parent = globalThis.window;
@@ -112,7 +114,18 @@ test('the app starts its own browser sign-in when its IMS instance initializes a
     const evidence = JSON.parse(element('#evidence').textContent);
     assert.equal(evidence.attempts[0].status, 'pending');
     assert.equal(evidence.sdkTokenUsed, false);
+    assert.equal(typeof timeout, 'function', 'browser authorization needs a bounded callback wait');
+    timeout();
+    assert.equal(JSON.parse(element('#evidence').textContent).attempts[0].status, 'no-callback');
   } finally {
     Object.assign(globalThis, saved);
   }
+});
+
+test('reports only a safe IMS error code, not arbitrary messages or token-bearing payloads', () => {
+  assert.equal(typeof auth.imsErrorCode, 'function', 'safe IMS error-code helper is missing');
+  assert.equal(auth.imsErrorCode({ error: 'networkError', message: 'synthetic-token-bearing-message' }), 'networkError');
+  assert.equal(auth.imsErrorCode({ name: 'Error', message: 'synthetic-token-bearing-message' }), 'Error');
+  assert.equal(auth.imsErrorCode({ error: 'unexpected https://example.com?access_token=synthetic' }), 'IMS error');
+  assert.equal(auth.imsErrorCode('raw-sensitive-message'), 'IMS error');
 });
