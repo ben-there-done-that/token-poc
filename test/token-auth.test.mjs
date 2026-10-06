@@ -219,3 +219,10 @@ test('invalid token-endpoint JSON is reported without exposing response fragment
     return true;
   });
 });
+
+test('the deployed app defaults to the registered public SPA client and identity-only scopes', async () => {
+  const html = await readFile(new URL('../tools/token/index.html', import.meta.url), 'utf8');
+  assert.match(html, /id="client-id" value="70d42326a3344517a75310c36b9b4f2b"/);
+  assert.match(html, /id="scope" value="openid,AdobeID,profile,email,org.read"/);
+  assert.ok(!html.includes('client_secret'));
+});
