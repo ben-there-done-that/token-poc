@@ -129,3 +129,70 @@ test('reports only a safe IMS error code, not arbitrary messages or token-bearin
   assert.equal(auth.imsErrorCode({ error: 'unexpected https://example.com?access_token=synthetic' }), 'IMS error');
   assert.equal(auth.imsErrorCode('raw-sensitive-message'), 'IMS error');
 });
+
+test('generates the RFC 7636 S256 challenge and an unpredictable public-client verifier', async () => {
+  assert.equal(typeof auth.pkceChallenge, 'function', 'PKCE challenge generation is missing');
+  assert.equal(await auth.pkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'), 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  const first = await auth.createPkce();
+  const second = await auth.createPkce();
+  assert.match(first.verifier, /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(first.verifier, second.verifier);
+  assert.equal(first.challenge, await auth.pkceChallenge(first.verifier));
+});
+
+test('requests a PKCE code for darkalley or an explicit independently registered SPA client', () => {
+  assert.equal(typeof auth.codeAuthorizeUrl, 'function', 'PKCE authorization URL builder is missing');
+  for (const clientId of ['darkalley', 'synthetic-spa-client']) {
+    const url = new URL(auth.codeAuthorizeUrl('https://app.example', 'nonce', 'challenge', { clientId, scope: 'openid,AdobeID' }));
+    assert.equal(url.searchParams.get('client_id'), clientId);
+    assert.equal(url.searchParams.get('response_type'), 'code');
+    assert.equal(url.searchParams.get('response_mode'), 'fragment');
+    assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+    assert.equal(url.searchParams.get('code_challenge'), 'challenge');
+    assert.equal(url.searchParams.get('redirect_uri'), 'https://app.example/tools/token/callback.html');
+    assert.equal(url.searchParams.get('state'), 'nonce');
+    assert.equal(url.searchParams.get('scope'), 'openid,AdobeID');
+    assert.equal(url.searchParams.has('client_secret'), false);
+  }
+});
+
+test('accepts only state-bound authorization codes and sanitizes callback errors', () => {
+  assert.equal(typeof auth.acceptCodeResult, 'function', 'code callback validation is missing');
+  assert.deepEqual(auth.acceptCodeResult('#code=synthetic-code&state=nonce', 'nonce'), { code: 'synthetic-code' });
+  assert.throws(() => auth.acceptCodeResult('?code=synthetic-code&state=other', 'nonce'), /state/i);
+  assert.throws(() => auth.acceptCodeResult('?code=synthetic-code', null), /state/i);
+  assert.throws(() => auth.acceptCodeResult('#error=invalid_client&state=nonce', 'nonce'), /invalid_client/);
+  assert.throws(() => auth.acceptCodeResult('#state=nonce', 'nonce'), /no authorization code/i);
+});
+
+test('exchanges a code in the browser using PKCE without a client secret or the SDK token', async () => {
+  assert.equal(typeof auth.exchangeCode, 'function', 'public-client code exchange is missing');
+  let request;
+  const fetcher = async (url, options) => {
+    request = { url, options };
+    return { ok: true, status: 200, json: async () => ({ access_token: 'synthetic-new-token', expires_in: 3600, refresh_token: 'synthetic-discarded-refresh' }) };
+  };
+  assert.deepEqual(await auth.exchangeCode('synthetic-spa-client', 'synthetic-code', 'synthetic-verifier', fetcher), { token: 'synthetic-new-token', expiresIn: 3600 });
+  const url = new URL(request.url);
+  assert.equal(url.pathname, '/ims/token/v3');
+  assert.equal(url.searchParams.get('client_id'), 'synthetic-spa-client');
+  assert.equal(request.options.method, 'POST');
+  assert.equal(request.options.credentials, 'omit');
+  const body = new URLSearchParams(request.options.body);
+  assert.equal(body.get('grant_type'), 'authorization_code');
+  assert.equal(body.get('code'), 'synthetic-code');
+  assert.equal(body.get('code_verifier'), 'synthetic-verifier');
+  assert.equal(body.has('client_secret'), false);
+  assert.equal(request.options.headers.Authorization, undefined);
+  assert.equal(url.searchParams.has('code'), false);
+});
+
+test('code-exchange failures never include codes, verifiers, or arbitrary IMS response text', async () => {
+  assert.equal(typeof auth.exchangeCode, 'function', 'public-client code exchange is missing');
+  const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: 'synthetic-sensitive-code' }) });
+  await assert.rejects(auth.exchangeCode('client', 'synthetic-code', 'synthetic-verifier', fetcher), error => {
+    assert.match(error.message, /400.*invalid_grant/);
+    assert.ok(!/synthetic/.test(error.message));
+    return true;
+  });
+});
